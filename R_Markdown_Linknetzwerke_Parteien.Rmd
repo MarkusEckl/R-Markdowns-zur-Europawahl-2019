@@ -1,0 +1,114 @@
+---
+title: "Untersuchung der Linknetzwerke deutscher Parteien"
+author: "Markus Eckl - Lehrstuhl Digital Humanities, Universität Passau"
+date: "Dezember 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1. Einleitung
+
+Das folgende [R Markdwon](https://rmarkdown.rstudio.com/) zeigt die Erstellung eines Linknetzwerks auf Grundlage der Links von deutschen Parteienwebseiten. Die Daten wurden im Rahmen des DFG Projektes [Methoden der Digital Humanities in Anwendung für den Aufbau und die Nutzung von Webarchiven](https://www.dfg.de/en/dfg_profile/statutory_bodies/general_assembly/index.html) gecrawlt und in ein Webarchiv überführt. Mithilfe von [Archives Unleashed Toolkit](https://archivesunleashed.org/aut/) konnten aus den [WARC-Dateien](https://files.dnb.de/nestor/kurzartikel/thema_15-WARC.pdf) das Crawldatum, die Ausgangsdomain und die Ziel-URL extrahiert werden.
+
+Bei dem Link Netzwerk handelt es sich um einen gerichteten Graphen, dessen Ausgansknoten die Parteienwebseiten von AFD, Bündnis 90/ Die Grünen, CDU, CSU, Die Linke, FDP, Freien Wähler, NPD, ÖDP und Piratenpartei sind. Der Eingangsknoten ist eine referenzierte URL. Die Struktur des Netzwerkes ist egozentriert, das heißt, dass die Parteienwebseiten zentrale Knoten mit einer hohen Anzahl an ausgehenden Kanten sind. Um sie herum sind die referenzierten URLs angeordnet, die – aufgrund der Crawlmethode – keine weiteren ausgehenden Verlinkungen besitzen. 
+
+Das ursprüngliche Netzwerk bestand aus 35.023 Knoten mit 35.200 Kanten. So hatte beispielsweise die Webseite www.afd.de 8.256 oder www.spd.de 2.896 ausgehende Links. Ausgehend eines slochen großen Netzwerks bestand das Interesse, welche URL's von mindestens zwei Parteienwebseiten verlinkt wurden. Dadurch könnten Websteiten bzw. Inhalte identifiziert werden, die besonders zentral sind. Auf die Berechnung von Zentralitätsmaße wurde verzichtet, da die jeweiligen Maße für einen gerichteten Graphen erst dann sinnvoll sind, wenn eine stärkere Vernetzung zwischen den Knoten besteht. Die Filterung bestand darin, dass alle Konten mindestens zwei eingehende bzw. ausgehnde Kanten besitzten sowie dass die referenzierten URL's von mindestens zwei Parteien verlinkt wurden. Durch diese Reduktion ergab sich ein Netzwerk aus 56 Knoten und 99 Kanten. Visualisiert wurden dieses Netzwerke in dem Netzwerkanalyse und -visualisierungsprogramm [Gephi](https://gephi.org/). 
+
+
+
+# 2. Laden der Packages
+```{r, eval=F, echo=T}
+library(dplyr)
+library(igraph)
+library(ggraph)
+library(ggplot2)
+library(gtools)
+```
+
+
+# 3. Laden der CSV der Pareien & Extraktion der Parteien 
+```{r, eval=F, echo=T}
+df.party <- read.csv("parties_final/total_linkgraph/part-00000-1d1fe2e6-675c-4c10-bd37-b922fdeeaf00-c000.csv", sep = ",", header = 0)
+
+colnames(df.party) <- c("time.crawl", "node.1", "node.2", "n.edges")
+
+parties.only <- c( "www.afd.de", "www.die-linke.de", "www.fdp.de", "www.spd.de", "npd.de", "www.die-partei.de", "www.gruene.de",
+                   "www.tierschutzpartei.de","www.cdu.de", "www.oedp.de", "www.csu.de")
+  
+# Filter -> es wird ein Teildatensatz erstellt
+df.party2 <- df.party %>%
+  filter(node.1 %in% parties.only)
+
+
+
+```
+
+# 4. Erstellung des Netzwerks 
+
+```{r, eval=F, echo=T}
+df.party3 <- df.party2 %>% select("node.1","node.2")
+g.party <- graph.data.frame(df.party3, directed = TRUE)
+ 
+V(g.party)
+
+V(g.party)$name <- as_ids(V(g.party))
+
+#CSV für die Visualisierung in Gephi
+
+write.csv(df.edges, "df_edges_partein_BSB_22062019.csv")
+
+```
+
+
+#5. Analyse 
+
+Entfernen von URLs, die nicht von min. zwei Parteien referenziert wurden. 
+```{r, eval=F, echo=T}
+# Degree der Knoten (Indegree)
+g.party$degree <- degree(g.party, mode = "in")
+# Dataframe 
+df.degree <- data.frame(node = V(g.party)$name,
+                        degree = g.party$degree)
+# Filter min. Indegree von 2 
+df.degree2  <- df.degree %>%
+  filter(degree >=2)
+
+# Extraktion der Edges 
+id <- c()
+x <- c()
+df.link.bet <- data.frame()
+
+for (n in df.degree2$node) {
+ 
+ x <- unlist(adjacent_vertices(g.party, n, mode = "in")) #L inks mit min. 2 Indegree  - Ermittlung der Nachbarknoten
+ id.x <- c()
+ # Ermitlung und Extratkion der Namens IDs im Graphen
+  for (s in 1:length(x)) {
+    id.x[s] <- x[s]
+
+ }
+ # Dataframe 
+ df.x <- data.frame(out.link = V(g.party)$name[id.x], url = n)
+ df.link.bet <- rbind(df.link.bet, df.x)
+
+ 
+}
+
+# Dopplete Zeilen enfernen 
+df.link.bet2 <- df.link.bet %>% distinct()
+#Einzelne Zeilen entfernen - Resultat von doppelte Zeilen entfernen 
+df.link.bet3 <- df.link.bet2 %>% group_by(url) %>% filter(n() > 1)
+
+
+```
+
+# 6. Visualisierung 
+
+Die Visualisierung erfolgte in [Gephi](https://gephi.org/). Das Netzwerk zeit vor allem ausgehende Links der Parteien, die von mehr als einer Partei angesteuert wurde. So verweisen vor allem CDU und FDP häufiger auf gleiche Tweets. 
+
+In einem größeren Kontext könnte die Methode herangezogen werden, um wichtige URLs zu identifizieren, die dann ebenfalls gecrawlt werden können (Bestandsaufbau). Als wichtig wird hier eine URL verstanden, die von unterschiedlichen Parteienwebseiten verlinkt wurde. 
+
+![](output_vis/graph_links_gemeinsame_zeile_parteien_2019.png)
